@@ -1,3 +1,5 @@
+"""Execution and risk response contracts for paper and live trade paths."""
+
 from __future__ import annotations
 
 from datetime import datetime

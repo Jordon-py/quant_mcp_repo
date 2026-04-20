@@ -1,3 +1,5 @@
+"""Approval registry service for controlled live-trading eligibility."""
+
 from __future__ import annotations
 
 from pathlib import Path

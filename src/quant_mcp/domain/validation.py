@@ -1,3 +1,5 @@
+"""Validation result contracts for backtests, walk-forward tests, and forward gates."""
+
 from __future__ import annotations
 
 from datetime import datetime

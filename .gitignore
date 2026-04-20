@@ -1,2 +1,4 @@
 /.env.example
 /.pytest_cache
+pytest
+.pyc

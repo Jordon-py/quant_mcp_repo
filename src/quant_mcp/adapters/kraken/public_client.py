@@ -1,3 +1,9 @@
+"""Kraken public market-data adapter.
+
+This client is intentionally read-only and unsigned. It converts Kraken OHLC
+rows into internal Candle contracts for dataset services.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -32,6 +38,7 @@ class KrakenPublicClient:
             raise ValueError(f"Kraken OHLC error: {payload['error']}")
 
         result = payload.get("result", {})
+        # Kraken nests candles under the resolved pair key and reserves "last" for pagination.
         pair_key = next((k for k in result.keys() if k != "last"), None)
         if pair_key is None:
             return []

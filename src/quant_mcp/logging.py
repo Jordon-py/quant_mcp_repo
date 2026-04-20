@@ -1,3 +1,5 @@
+"""Process logging setup for MCP and HTTP entrypoints."""
+
 from __future__ import annotations
 
 import logging

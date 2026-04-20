@@ -1,3 +1,10 @@
+"""Environment-backed application configuration.
+
+Settings define global runtime boundaries such as artifact paths, MCP HTTP
+binding, and live-trading risk limits. Protocol registration and business logic
+should read this module, not mutate it.
+"""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -33,6 +40,7 @@ class AppSettings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
     settings = AppSettings()
+    # Directory creation is centralized here so services can assume their roots exist.
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.artifact_dir.mkdir(parents=True, exist_ok=True)
     return settings

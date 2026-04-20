@@ -293,6 +293,14 @@ Default endpoint intent:
 http://127.0.0.1:8000/mcp
 ```
 
+For Codex stdio transport, use:
+
+```powershell
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+$env:MCP_TRANSPORT="stdio"
+python -m quant_mcp.main
+```
+
 ## 4. Run the FastAPI-mounted version
 
 ```bash
@@ -310,6 +318,74 @@ Mounted MCP path:
 ```text
 http://127.0.0.1:8000/mcp
 ```
+
+---
+
+## ✦ Global Codex MCP setup
+
+Codex reads global MCP servers from `C:\Users\goku\.codex\config.toml`
+(`~/.codex/config.toml`). Use the global config when you want this server
+available across Codex CLI and IDE sessions instead of only inside this repo.
+
+Minimal CLI setup:
+
+```powershell
+codex mcp add QuantResearchMCP --env MCP_TRANSPORT=stdio --env PYTHONPATH=C:\Users\goku\Documents\quant_mcp_repo\src -- C:\Python313\python.exe -m quant_mcp.main
+```
+
+Durable global config block:
+
+```toml
+[mcp_servers.QuantResearchMCP]
+command = 'C:\Python313\python.exe'
+args = ['-m', 'quant_mcp.main']
+cwd = 'C:\Users\goku\Documents\quant_mcp_repo'
+startup_timeout_sec = 60
+tool_timeout_sec = 120
+
+[mcp_servers.QuantResearchMCP.env]
+MCP_TRANSPORT = "stdio"
+PYTHONPATH = 'C:\Users\goku\Documents\quant_mcp_repo\src'
+
+[mcp_servers.QuantResearchMCP.tools.health_check]
+approval_mode = "auto"
+
+[mcp_servers.QuantResearchMCP.tools.get_risk_status]
+approval_mode = "auto"
+
+[mcp_servers.QuantResearchMCP.tools.execute_live_trade]
+approval_mode = "approve"
+
+[mcp_servers.QuantResearchMCP.tools.cancel_all_live_orders]
+approval_mode = "approve"
+```
+
+Expected surfaced MCP capabilities:
+- tools: `health_check`, `ingest_market_data`, `refresh_dataset`, `profile_dataset`,
+  `list_dataset_versions`, `build_feature_table`, `generate_strategy_candidates`,
+  `save_strategy`, `list_strategies`, `run_backtest`, `compare_backtests`,
+  `run_walk_forward`, `run_forward_test`, `approve_strategy`, `revoke_approval`,
+  `get_risk_status`, `paper_trade_step`, `prepare_live_trade_intent`,
+  `execute_live_trade`, `cancel_all_live_orders`
+- resources: `quant://system/risk-status`,
+  `quant://datasets/{dataset_id}/profile`
+- prompts: `research_review_prompt`
+
+Verification checklist:
+- `codex mcp get QuantResearchMCP` shows the stdio command, env, and enabled status.
+- A client can list the tools/resources/prompts from the configured command.
+- Calling `health_check` returns `status=ok` and `live_enabled=false` by default.
+- Calling `get_risk_status` returns the configured symbol allowlist and live caps.
+
+Troubleshooting:
+- `ModuleNotFoundError: quant_mcp`: confirm `PYTHONPATH` points to this repo's `src`.
+- Slow startup or timeout: keep `startup_timeout_sec = 60`; FastMCP imports can be slow
+  on first launch in this Windows environment.
+- Missing dependencies: run `pip install -e .[dev]` in the selected Python environment.
+- Live execution rejected: expected unless `ENABLE_LIVE_TRADING=true`, Kraken credentials,
+  approval records, validation evidence, and paper-trading readiness are all present.
+- Kraken credential errors: live-only tools require both `KRAKEN_API_KEY` and
+  `KRAKEN_API_SECRET`; keep them out of source control.
 
 ---
 

@@ -1,3 +1,9 @@
+"""JSON artifact persistence helpers.
+
+This adapter owns file layout mechanics for Pydantic artifacts while services
+own the meaning of each artifact.
+"""
+
 from __future__ import annotations
 
 import json

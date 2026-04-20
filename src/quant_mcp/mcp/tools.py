@@ -1,3 +1,10 @@
+"""MCP tool wrappers for the quant research workflow.
+
+This layer translates MCP calls into typed domain requests and delegates to
+services. It intentionally stays thin so trading rules remain testable outside
+the protocol boundary.
+"""
+
 from __future__ import annotations
 
 from fastmcp.dependencies import CurrentContext
@@ -45,6 +52,7 @@ def _services() -> tuple[
     ExecutionService,
 ]:
     settings = get_settings()
+    # Services are lightweight and stateless per call; persisted state lives under configured roots.
     approvals = ApprovalService(settings)
     risk = RiskService(settings)
     return (
@@ -193,6 +201,7 @@ def paper_trade_step(request: PaperTradeStepRequest) -> dict:
 def prepare_live_trade_intent(intent: TradeIntent) -> RiskApproval | RiskRejection:
     """Validate whether a live trade intent is eligible. This tool never places an order."""
     *_, execution_service = _services()
+    # The v1 MCP surface is intentionally conservative until validation/paper state is wired in.
     return execution_service.prepare_live_trade_intent(
         intent=intent,
         strategy_passed_validation=False,

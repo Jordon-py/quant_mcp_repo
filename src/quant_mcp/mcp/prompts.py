@@ -1,3 +1,5 @@
+"""MCP prompts that guide research review without bypassing deterministic gates."""
+
 from __future__ import annotations
 
 from fastmcp.prompts import Message, PromptResult

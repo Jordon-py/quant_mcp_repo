@@ -1,3 +1,9 @@
+"""Shared domain primitives.
+
+Common helpers stay dependency-light so all Pydantic contracts can import them
+without pulling in services, adapters, or protocol code.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -5,7 +11,6 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
-
 
 
 def utc_now() -> datetime:

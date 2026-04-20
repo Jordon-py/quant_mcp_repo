@@ -1,3 +1,9 @@
+"""Forward-test gate placeholder.
+
+This service preserves the promotion step in the architecture until a persistent
+paper-trading ledger replaces the current optimistic placeholder.
+"""
+
 from __future__ import annotations
 
 from quant_mcp.domain.validation import ForwardTestRequest, ForwardTestResult

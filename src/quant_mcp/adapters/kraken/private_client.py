@@ -1,3 +1,9 @@
+"""Kraken private execution adapter.
+
+Only signed order-management calls live here; risk decisions happen before this
+adapter is reached.
+"""
+
 from __future__ import annotations
 
 import time
@@ -20,6 +26,7 @@ class KrakenPrivateClient:
         path = "/0/private/AddOrder"
         nonce = str(int(time.time() * 1000))
         body = {"nonce": nonce, **payload}
+        # Kraken signs the path plus nonce/form body, not a JSON request body.
         signature = KrakenSigner.sign(path, nonce, body, self.api_secret)
         headers = {"API-Key": self.api_key, "API-Sign": signature}
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -31,6 +38,7 @@ class KrakenPrivateClient:
         path = "/0/private/CancelAll"
         nonce = str(int(time.time() * 1000))
         body = {"nonce": nonce}
+        # Recompute nonce/signature per request; Kraken rejects reused nonces.
         signature = KrakenSigner.sign(path, nonce, body, self.api_secret)
         headers = {"API-Key": self.api_key, "API-Sign": signature}
         async with httpx.AsyncClient(timeout=20.0) as client:

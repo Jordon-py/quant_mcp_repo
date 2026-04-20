@@ -1,3 +1,9 @@
+"""Forward-only walk-forward validation service.
+
+The service evaluates contiguous train/test windows in chronological order and
+never shuffles rows, matching the way a trading strategy would encounter time.
+"""
+
 from __future__ import annotations
 
 from quant_mcp.adapters.persistence.parquet_store import ParquetStore
@@ -17,6 +23,7 @@ class WalkForwardService:
         start = 0
         fold_idx = 1
         while start + request.train_bars + request.test_bars <= len(frame):
+            # Each fold trains on the past window and scores only the immediately following slice.
             train_end = start + request.train_bars
             test_end = train_end + request.test_bars
             test_slice = frame.iloc[train_end:test_end].copy()
@@ -32,6 +39,11 @@ class WalkForwardService:
                 )
             )
             fold_idx += 1
+            # Slide by the test size to avoid leakage from overlapping evaluation rows.
             start += request.test_bars
-        status = ValidationStatus.PASS if folds and sum(f.total_return_pct for f in folds) > 0 else ValidationStatus.FAIL
+        status = (
+            ValidationStatus.PASS
+            if folds and sum(f.total_return_pct for f in folds) > 0
+            else ValidationStatus.FAIL
+        )
         return WalkForwardResult(strategy_id=request.strategy_id, dataset_id=request.dataset_id, status=status, folds=folds)

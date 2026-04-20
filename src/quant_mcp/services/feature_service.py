@@ -1,3 +1,9 @@
+"""Feature engineering service for saved market datasets.
+
+It creates simple, explainable lagged features from persisted candles and keeps
+future-leakage prevention inside the service boundary.
+"""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -20,6 +26,7 @@ class FeatureService:
         frame["ma_slow"] = frame["close"].rolling(request.lookback_slow).mean()
         frame["volatility"] = frame["ret_1"].rolling(request.lookback_fast).std()
         frame["signal_trend_up"] = (frame["ma_fast"] > frame["ma_slow"]).astype(int)
+        # Shift every derived column one row so a bar cannot use its own close to predict itself.
         frame = frame.shift(1)
         frame = frame.dropna().reset_index(drop=True)
         path = self.store.write_frame(f"features/{request.dataset_id}_features.parquet", frame)

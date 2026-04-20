@@ -1,3 +1,9 @@
+"""Strategy registry and constrained candidate generator.
+
+The generator produces inspectable strategy specs from a fixed grammar rather
+than executable model-authored trading code.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

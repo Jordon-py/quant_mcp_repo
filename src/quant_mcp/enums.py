@@ -1,3 +1,5 @@
+"""Shared lifecycle enums used by domain contracts and services."""
+
 from enum import Enum
 
 

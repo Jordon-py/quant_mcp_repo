@@ -1,3 +1,9 @@
+"""Strategy specification contracts.
+
+These models describe deterministic strategy hypotheses; they are not executable
+strategy code.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

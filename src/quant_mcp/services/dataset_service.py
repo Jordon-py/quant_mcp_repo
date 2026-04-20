@@ -1,3 +1,9 @@
+"""Dataset ingestion and profiling service.
+
+This service owns Kraken OHLC persistence rules: dataset identity, closed-candle
+filtering, append-only refresh, and profiling. It does not build strategy logic.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,8 +44,11 @@ class DatasetService:
         frame = pd.DataFrame([c.model_dump(mode="json") for c in candles])
         if frame.empty:
             raise ValueError("No candles returned from Kraken")
+        # Persist only closed bars so downstream validation never sees mutable exchange candles.
         frame = frame[frame["closed"] == True].copy()  # noqa: E712
-        frame = frame.sort_values("ts_open").drop_duplicates(subset=["symbol", "interval_minutes", "ts_open"])
+        frame = frame.sort_values("ts_open").drop_duplicates(
+            subset=["symbol", "interval_minutes", "ts_open"]
+        )
         dataset_id = self.dataset_id(request.symbol, request.interval_minutes)
         path = self.store.write_frame(f"datasets/{dataset_id}.parquet", frame)
         return DatasetVersion(
@@ -60,17 +69,20 @@ class DatasetService:
         since_unix = None
         if not existing.empty:
             last_open = pd.to_datetime(existing["ts_open"].max(), utc=True)
+            # Re-fetch from the last known open time to overlap one bar, then dedupe below.
             since_unix = int(last_open.timestamp())
 
         new_candles = await self.client.fetch_ohlc(request.symbol, request.interval_minutes, since_unix)
         new_frame = pd.DataFrame([c.model_dump(mode="json") for c in new_candles])
         if not new_frame.empty:
+            # The same closed-candle rule applies on refresh to preserve append-only semantics.
             new_frame = new_frame[new_frame["closed"] == True].copy()  # noqa: E712
 
         combined = pd.concat([existing, new_frame], ignore_index=True) if not existing.empty else new_frame
         if combined.empty:
             raise ValueError("Refresh produced no rows")
 
+        # Sorting plus dedupe makes refresh idempotent when Kraken returns an overlapping candle.
         combined = combined.sort_values("ts_open").drop_duplicates(
             subset=["symbol", "interval_minutes", "ts_open"], keep="first"
         )

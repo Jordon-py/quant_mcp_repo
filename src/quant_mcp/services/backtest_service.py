@@ -1,3 +1,9 @@
+"""Chronological baseline backtest service.
+
+This is an inspectable v1 simulator for validation gates, not a full exchange
+fill model. It keeps fee/slippage accounting explicit for teaching and review.
+"""
+
 from __future__ import annotations
 
 import math
@@ -25,6 +31,7 @@ class BacktestService:
         frame["position"] = frame["signal_trend_up"].astype(int)
         frame["gross_return"] = frame["position"] * frame["ret_1"]
         cost = (request.fee_bps + request.slippage_bps) / 10_000
+        # Transaction costs are charged only when the target position changes.
         frame["trade_change"] = frame["position"].diff().abs().fillna(frame["position"].abs())
         frame["net_return"] = frame["gross_return"] - frame["trade_change"] * cost
         frame["equity"] = (1 + frame["net_return"]).cumprod()
@@ -36,6 +43,7 @@ class BacktestService:
         wins = int((frame["net_return"] > 0).sum())
         losses = max(int((frame["net_return"] < 0).sum()), 1)
         gross_profit = float(frame.loc[frame["net_return"] > 0, "net_return"].sum())
+        # Avoid division instability in tiny samples where no losing bar exists.
         gross_loss = abs(float(frame.loc[frame["net_return"] < 0, "net_return"].sum())) or 1e-9
 
         metrics = BacktestMetrics(
@@ -46,7 +54,11 @@ class BacktestService:
             profit_factor=round(gross_profit / gross_loss, 4) if math.isfinite(gross_profit / gross_loss) else 0.0,
             benchmark_return_pct=round(benchmark_return_pct, 4),
         )
-        status = ValidationStatus.PASS if metrics.total_return_pct > metrics.benchmark_return_pct else ValidationStatus.WARNING
+        status = (
+            ValidationStatus.PASS
+            if metrics.total_return_pct > metrics.benchmark_return_pct
+            else ValidationStatus.WARNING
+        )
         result = BacktestResult(
             strategy_id=request.strategy_id,
             dataset_id=request.dataset_id,

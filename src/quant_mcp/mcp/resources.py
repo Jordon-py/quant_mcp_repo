@@ -1,3 +1,9 @@
+"""Read-only MCP resources for operational state.
+
+Resources expose inspectable system data without changing datasets, approvals,
+or execution state.
+"""
+
 from __future__ import annotations
 
 import json

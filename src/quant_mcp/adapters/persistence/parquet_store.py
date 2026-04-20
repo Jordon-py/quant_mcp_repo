@@ -1,3 +1,9 @@
+"""DataFrame persistence adapter for datasets and feature tables.
+
+Parquet is the preferred storage format; pickle is a local-development fallback
+so the teaching repo still runs before optional parquet engines are installed.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,3 +1,5 @@
+"""Approval contracts required before live-trading preflight can pass."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta

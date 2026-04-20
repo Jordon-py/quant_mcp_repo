@@ -1,3 +1,9 @@
+"""Paper/live execution coordinator.
+
+ExecutionService coordinates approvals, risk checks, and the Kraken private
+adapter. It does not own strategy selection or validation policy.
+"""
+
 from __future__ import annotations
 
 from quant_mcp.adapters.kraken.private_client import KrakenPrivateClient
@@ -12,6 +18,7 @@ class ExecutionService:
         self.settings = settings
         self.approval_service = approval_service
         self.risk_service = risk_service
+        # Private trading stays unavailable unless both credentials are present.
         self.private_client = (
             KrakenPrivateClient(settings.kraken_api_key, settings.kraken_api_secret)
             if settings.kraken_api_key and settings.kraken_api_secret
@@ -26,7 +33,13 @@ class ExecutionService:
             "status": "simulated",
         }
 
-    def prepare_live_trade_intent(self, intent: TradeIntent, strategy_passed_validation: bool, paper_path_exists: bool) -> RiskApproval | RiskRejection:
+    def prepare_live_trade_intent(
+        self,
+        intent: TradeIntent,
+        strategy_passed_validation: bool,
+        paper_path_exists: bool,
+    ) -> RiskApproval | RiskRejection:
+        # This is a preflight only; placing an order remains a separate privileged call.
         approval = self.approval_service.get_active_approval(intent.strategy_id)
         return self.risk_service.validate_live_trade(intent, approval, strategy_passed_validation, paper_path_exists)
 

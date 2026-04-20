@@ -1,3 +1,9 @@
+"""Fail-closed live-trading risk gate.
+
+RiskService owns deterministic veto rules for live execution. Callers may ask
+for validation, but they do not decide whether a live order is allowed.
+"""
+
 from __future__ import annotations
 
 from quant_mcp.domain.approval import ApprovalRecord
@@ -24,6 +30,7 @@ class RiskService:
         strategy_passed_validation: bool,
         paper_path_exists: bool,
     ) -> RiskApproval | RiskRejection:
+        # Order matters: cheap global vetoes run before approval-specific checks.
         if intent.execution_mode != ExecutionMode.LIVE:
             return RiskApproval(reason="paper intent is always non-live")
         if not self.settings.enable_live_trading:
@@ -38,6 +45,7 @@ class RiskService:
             return RiskRejection(code="symbol_not_allowed", reason="symbol blocked by environment allowlist")
         if not approval.is_valid_for_symbol(intent.symbol):
             return RiskRejection(code="approval_invalid", reason="approval expired, revoked, or symbol not allowed")
+        # The tighter of the approval cap and global cap always wins.
         if intent.requested_allocation_pct > min(approval.max_allocation_pct, self.settings.max_live_allocation_pct):
             return RiskRejection(code="allocation_exceeded", reason="requested allocation exceeds risk limits")
         return RiskApproval()
