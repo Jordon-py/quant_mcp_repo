@@ -1,0 +1,444 @@
+# Quant Research MCP
+
+> **A research-first, safety-gated FastMCP server for datasets, strategy validation, paper trading, and tightly controlled Kraken execution.**
+
+---
+
+## ✦ What this repo is
+
+This repo is a **serious starter architecture**, not a hype-bot trading toy.
+
+It is designed around one core principle:
+
+> **Research must earn the right to execution.**
+
+That means the system is intentionally shaped like this:
+
+```text
+market data → dataset → features → strategies → backtest → walk-forward → forward test → approval → paper/live execution
+```
+
+Every step narrows risk.
+Every later step depends on evidence from earlier steps.
+Every live-trading path is expected to **fail closed** unless explicit conditions are met.
+
+---
+
+## ✦ Why this architecture exists
+
+Most trading-code demos collapse too many responsibilities into one place:
+
+- the exchange adapter decides too much
+- the MCP tool surface contains business logic
+- strategy generation is treated as intelligence instead of a hypothesis factory
+- backtests ignore costs and chronology
+- “live mode” becomes a boolean toggle instead of a gated promotion workflow
+
+This repo avoids that.
+
+### Design stance
+
+- **MCP is the interface layer**
+- **services own behavior**
+- **domain models own contracts**
+- **adapters isolate external systems**
+- **risk gates veto dangerous actions**
+- **execution is privileged, not default**
+
+---
+
+## ✦ Core capabilities
+
+### Dataset tools
+- ingest market data from Kraken public OHLC
+- refresh datasets append-only using closed candles only
+- profile saved datasets
+- list dataset artifacts
+- build lagged feature tables
+
+### Strategy tools
+- generate constrained strategy candidates
+- save strategy specs
+- list strategy registry
+
+### Validation tools
+- run fee-aware chronological backtests
+- compare backtest runs
+- run walk-forward validation
+- run forward-test gate placeholder
+
+### Approval + risk tools
+- approve strategy for controlled live eligibility
+- revoke approval
+- inspect global risk configuration
+
+### Execution tools
+- paper-trade step
+- prepare live trade intent
+- execute live trade
+- cancel all live orders
+
+---
+
+## ✦ Safety model
+
+This is the most important part of the repo.
+
+### Live trading is **disabled by default**
+
+A live-trade request should only pass if **all** conditions are true:
+
+1. `ENABLE_LIVE_TRADING=true`
+2. the strategy already has a paper-trading path
+3. validation gates were passed
+4. an active `ApprovalRecord` exists
+5. the symbol is allowed by both environment config and approval
+6. requested allocation stays inside risk limits
+7. execution mode is explicitly live
+8. preflight validation passes
+
+If any of those fail:
+
+> **the system rejects the request structurally**
+
+That is handled by `RiskService`, not by UI intent or trusting the caller.
+
+---
+
+## ✦ Repo map
+
+```text
+quant_mcp/
+├─ pyproject.toml
+├─ .env.example
+├─ README.md
+└─ src/
+   └─ quant_mcp/
+      ├─ settings.py                # environment + global risk config
+      ├─ logging.py                 # stderr-only structured logging
+      ├─ enums.py                   # shared enums and lifecycle states
+      ├─ main.py                    # standalone FastMCP HTTP entrypoint
+      ├─ api/
+      │  └─ fastapi_app.py          # optional FastAPI mount under /mcp
+      ├─ domain/
+      │  ├─ dataset.py              # candles, dataset versions, feature requests
+      │  ├─ strategy.py             # strategy grammar + registry contracts
+      │  ├─ validation.py           # backtest/walk-forward/forward-test contracts
+      │  ├─ approval.py             # approval record contract
+      │  └─ execution.py            # trade intent + risk response contracts
+      ├─ adapters/
+      │  ├─ kraken/
+      │  │  ├─ public_client.py     # public OHLC fetches only
+      │  │  ├─ private_client.py    # signed private order calls only
+      │  │  └─ signer.py            # Kraken request signing
+      │  └─ persistence/
+      │     ├─ json_store.py        # artifact persistence
+      │     └─ parquet_store.py     # dataset + feature persistence
+      ├─ services/
+      │  ├─ dataset_service.py      # append-only ingest + refresh + profile
+      │  ├─ feature_service.py      # lagged feature build
+      │  ├─ strategy_service.py     # constrained strategy generation
+      │  ├─ backtest_service.py     # chronological fee/slippage-aware baseline
+      │  ├─ walkforward_service.py  # forward-only fold testing
+      │  ├─ forward_test_service.py # promotion placeholder gate
+      │  ├─ approval_service.py     # approval registry
+      │  ├─ risk_service.py         # hard live-trading veto logic
+      │  └─ execution_service.py    # paper/live orchestration
+      ├─ mcp/
+      │  ├─ server.py               # FastMCP server object
+      │  ├─ tools.py                # MCP tools
+      │  ├─ resources.py            # MCP resources
+      │  └─ prompts.py              # MCP prompts
+      └─ tests/
+         ├─ test_risk_gates.py
+         ├─ test_append_only_ingestion.py
+         ├─ test_backtest_no_shuffle.py
+         └─ test_approval_required_for_live.py
+```
+
+---
+
+## ✦ How the data path works
+
+### 1) Ingest
+`DatasetService.ingest_market_data()` fetches Kraken OHLC and persists **closed candles only**.
+
+### 2) Refresh
+`refresh_dataset()` performs append-only refresh behavior:
+
+- load existing data
+- fetch from the latest known open timestamp
+- keep only closed candles
+- sort chronologically
+- dedupe on:
+  - `symbol`
+  - `interval_minutes`
+  - `ts_open`
+
+### 3) Feature build
+`FeatureService.build_feature_table()` computes lagged features like:
+
+- `ret_1`
+- `ma_fast`
+- `ma_slow`
+- `volatility`
+- `signal_trend_up`
+
+Then it performs a **shift(1)** before dropping nulls.
+
+That shift matters.
+It prevents using the current bar’s derived values to make the decision for that same bar.
+
+### Why that matters
+Without that lagging step, backtests often leak future information in subtle ways.
+
+---
+
+## ✦ How the validation path works
+
+### Backtest
+The baseline backtest is intentionally simple and educational.
+It:
+
+- uses chronological rows only
+- models fees and slippage in basis points
+- computes trade changes from position transitions
+- compares strategy return vs buy-and-hold baseline
+
+This is not yet a full production simulator.
+It is a **clean, inspectable v1**.
+
+For lean local environments without a parquet engine installed yet, the persistence adapter includes a pickle fallback so the repo still runs during setup and learning.
+
+### Walk-forward
+Walk-forward validation uses rolling train/test windows:
+
+```text
+train window → test window → slide forward → repeat
+```
+
+No random shuffle.
+No leakage-friendly cross-validation.
+
+### Forward test
+The forward-test service is intentionally a placeholder gate right now.
+It exists to make the architecture honest:
+
+> promotion should depend on a forward path, even before you fully implement the full paper ledger.
+
+---
+
+## ✦ How the strategy system works
+
+This repo does **not** let an LLM directly invent executable trades.
+
+Instead, `StrategyService` produces **constrained strategy specs**.
+That means the LLM or MCP caller can help propose hypotheses, but the resulting saved object is still deterministic and inspectable.
+
+Examples of current families:
+- breakout
+- trend
+- mean reversion
+
+That is safer than “AI writes arbitrary strategy code and executes it.”
+
+---
+
+## ✦ MCP design philosophy
+
+The MCP layer is deliberately thin.
+
+### Tools
+Tools call services.
+They should not secretly become the business logic layer.
+
+### Resources
+Resources expose read-only system state, such as risk configuration or dataset profiles.
+
+### Prompts
+Prompts help guide analysis and review, but **must not override deterministic controls**.
+
+That split matters because it keeps AI helpful in the analysis loop while preventing it from quietly becoming the authority over execution.
+
+---
+
+## ✦ Running the project
+
+## 1. Create the environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # macOS / Linux
+# .venv\Scripts\activate   # Windows PowerShell
+pip install -e .[dev]
+```
+
+## 2. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Leave live trading off unless you are intentionally testing the full approval path.
+
+## 3. Run the standalone FastMCP server
+
+```bash
+python -m quant_mcp.main
+```
+
+Default endpoint intent:
+
+```text
+http://127.0.0.1:8000/mcp
+```
+
+## 4. Run the FastAPI-mounted version
+
+```bash
+uvicorn quant_mcp.api.fastapi_app:app --reload
+```
+
+Health endpoint:
+
+```text
+http://127.0.0.1:8000/healthz
+```
+
+Mounted MCP path:
+
+```text
+http://127.0.0.1:8000/mcp
+```
+
+---
+
+## ✦ Test commands
+
+```bash
+pytest
+```
+
+Optional quality checks:
+
+```bash
+ruff check .
+mypy src
+```
+
+---
+
+## ✦ Suggested learning order
+
+If you want to learn from this repo instead of only running it, go in this order:
+
+### Path A — architecture first
+1. `settings.py`
+2. `domain/`
+3. `services/risk_service.py`
+4. `services/execution_service.py`
+5. `mcp/tools.py`
+
+### Path B — quant pipeline first
+1. `domain/dataset.py`
+2. `services/dataset_service.py`
+3. `services/feature_service.py`
+4. `services/backtest_service.py`
+5. `services/walkforward_service.py`
+
+### Path C — exchange plumbing first
+1. `adapters/kraken/public_client.py`
+2. `adapters/kraken/signer.py`
+3. `adapters/kraken/private_client.py`
+4. `services/execution_service.py`
+
+---
+
+## ✦ Extension roadmap
+
+### Best next improvement
+Implement a real paper-trading ledger with:
+- positions
+- fills
+- realized/unrealized PnL
+- fees/funding accrual
+- reconciliation snapshots
+
+### Best next realism improvement
+Upgrade the backtest engine to:
+- support explicit entry/exit events
+- support stop-loss logic
+- track trade-level logs
+- apply different maker/taker cost assumptions
+- evaluate by regime segment
+
+### Best next safety improvement
+Require `execute_live_trade()` to accept a validated live-intent artifact ID rather than a raw order plan.
+That creates a stronger audit boundary.
+
+---
+
+# Glossary
+
+## Approval Record
+A structured object granting temporary permission for a strategy to trade specific symbols within specific allocation limits.
+
+## Append-only refresh
+A dataset update pattern where new rows are added and duplicates are removed, but old historical rows are not rewritten arbitrarily.
+
+## Basis points (bps)
+A unit for small percentages.
+100 bps = 1.00%.
+
+## Buy-and-hold baseline
+A benchmark representing what would have happened if you simply bought the asset and held it, instead of using the strategy.
+
+## Closed candle
+A completed OHLC bar. Using only closed candles avoids acting on unfinished interval data that can still change.
+
+## Drawdown
+The decline from an equity curve’s previous peak to a later trough.
+
+## Execution mode
+Whether a trade request is paper-only or intended for live execution.
+
+## Feature leakage
+Using information in training or testing that would not actually have been known at decision time.
+
+## Forward test
+Testing the strategy on later unseen data or a live-like paper stream after earlier research stages are complete.
+
+## MCP
+Model Context Protocol. A structured way to expose tools, resources, and prompts to AI clients.
+
+## Paper trading
+Simulated trading using live or historical market data without risking real capital.
+
+## Preflight validation
+A strict validation pass before allowing an action to continue, especially important before live trade execution.
+
+## Risk service
+The module that evaluates whether a trade is allowed. In this repo, it is the main veto boundary for live execution.
+
+## Slippage
+The difference between the expected execution price and the actual fill price.
+
+## Strategy grammar
+A constrained format for expressing strategy ideas safely and deterministically, instead of allowing arbitrary code generation.
+
+## Walk-forward validation
+A time-aware validation method that trains on earlier data and tests on later data repeatedly, preserving chronology.
+
+---
+
+## Final note
+
+This repo is intentionally opinionated.
+
+It prefers:
+- safer over flashier
+- inspectable over magical
+- modular over monolithic
+- research-first over premature live automation
+
+That is the right trade for a serious v1.
