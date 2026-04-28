@@ -21,11 +21,11 @@ def run() -> None:
 
     if transport == "stdio":
         # Stdio MCP clients expect protocol frames only; keep FastMCP's banner off this transport.
-        mcp.run(transport="stdio", show_banner=False)
+        mcp.run(transport="stdio", show_banner=True)
         return
 
     if transport in {"http", "streamable-http", "streamable_http"}:
-        mcp.run(transport="http", host=settings.mcp_host, port=settings.mcp_port)
+        mcp.run(transport="streamable-http", host=settings.mcp_host, port=settings.mcp_port)
         return
 
     raise ValueError(f"Unsupported MCP_TRANSPORT={transport!r}; use 'stdio' or 'http'.")

@@ -8,4 +8,6 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-mcp = FastMCP("Quant Research MCP")
+from quant_mcp.mcp.workflow_prompts import CORE_STRATEGY_RESEARCH_SYSTEM_PROMPT
+
+mcp = FastMCP("Quant Research MCP", instructions=CORE_STRATEGY_RESEARCH_SYSTEM_PROMPT)

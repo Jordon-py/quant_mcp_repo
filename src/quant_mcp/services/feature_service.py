@@ -25,9 +25,17 @@ class FeatureService:
         frame["ma_fast"] = frame["close"].rolling(request.lookback_fast).mean()
         frame["ma_slow"] = frame["close"].rolling(request.lookback_slow).mean()
         frame["volatility"] = frame["ret_1"].rolling(request.lookback_fast).std()
+        frame["rolling_high_20"] = frame["close"].rolling(20).max()
+        frame["rolling_vol_median"] = frame["volatility"].rolling(request.lookback_slow).median()
+        
+        std_slow = frame["close"].rolling(request.lookback_slow).std()
+        frame["zscore_close"] = (frame["close"] - frame["ma_slow"]) / std_slow
+
         frame["signal_trend_up"] = (frame["ma_fast"] > frame["ma_slow"]).astype(int)
-        # Shift every derived column one row so a bar cannot use its own close to predict itself.
-        frame = frame.shift(1)
+        # Shift derived signal inputs, but keep the realized return on the bar being evaluated.
+        # Backtests then apply yesterday's signal to today's return instead of leaking same-bar data.
+        lagged_columns = ["ma_fast", "ma_slow", "volatility", "rolling_high_20", "rolling_vol_median", "zscore_close", "signal_trend_up"]
+        frame[lagged_columns] = frame[lagged_columns].shift(1)
         frame = frame.dropna().reset_index(drop=True)
         path = self.store.write_frame(f"features/{request.dataset_id}_features.parquet", frame)
         return FeatureTableResult(

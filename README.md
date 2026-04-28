@@ -50,6 +50,7 @@ This repo avoids that.
 ## ✦ Core capabilities
 
 ### Dataset tools
+
 - ingest market data from Kraken public OHLC
 - refresh datasets append-only using closed candles only
 - profile saved datasets
@@ -57,22 +58,26 @@ This repo avoids that.
 - build lagged feature tables
 
 ### Strategy tools
+
 - generate constrained strategy candidates
 - save strategy specs
 - list strategy registry
 
 ### Validation tools
+
 - run fee-aware chronological backtests
 - compare backtest runs
 - run walk-forward validation
 - run forward-test gate placeholder
 
 ### Approval + risk tools
+
 - approve strategy for controlled live eligibility
 - revoke approval
 - inspect global risk configuration
 
 ### Execution tools
+
 - paper-trade step
 - prepare live trade intent
 - execute live trade
@@ -118,8 +123,6 @@ quant_mcp/
       ├─ logging.py                 # stderr-only structured logging
       ├─ enums.py                   # shared enums and lifecycle states
       ├─ main.py                    # standalone FastMCP HTTP entrypoint
-      ├─ api/
-      │  └─ fastapi_app.py          # optional FastAPI mount under /mcp
       ├─ domain/
       │  ├─ dataset.py              # candles, dataset versions, feature requests
       │  ├─ strategy.py             # strategy grammar + registry contracts
@@ -161,9 +164,11 @@ quant_mcp/
 ## ✦ How the data path works
 
 ### 1) Ingest
+
 `DatasetService.ingest_market_data()` fetches Kraken OHLC and persists **closed candles only**.
 
 ### 2) Refresh
+
 `refresh_dataset()` performs append-only refresh behavior:
 
 - load existing data
@@ -176,6 +181,7 @@ quant_mcp/
   - `ts_open`
 
 ### 3) Feature build
+
 `FeatureService.build_feature_table()` computes lagged features like:
 
 - `ret_1`
@@ -190,6 +196,7 @@ That shift matters.
 It prevents using the current bar’s derived values to make the decision for that same bar.
 
 ### Why that matters
+
 Without that lagging step, backtests often leak future information in subtle ways.
 
 ---
@@ -197,6 +204,7 @@ Without that lagging step, backtests often leak future information in subtle way
 ## ✦ How the validation path works
 
 ### Backtest
+
 The baseline backtest is intentionally simple and educational.
 It:
 
@@ -211,6 +219,7 @@ It is a **clean, inspectable v1**.
 For lean local environments without a parquet engine installed yet, the persistence adapter includes a pickle fallback so the repo still runs during setup and learning.
 
 ### Walk-forward
+
 Walk-forward validation uses rolling train/test windows:
 
 ```text
@@ -221,6 +230,7 @@ No random shuffle.
 No leakage-friendly cross-validation.
 
 ### Forward test
+
 The forward-test service is intentionally a placeholder gate right now.
 It exists to make the architecture honest:
 
@@ -236,6 +246,7 @@ Instead, `StrategyService` produces **constrained strategy specs**.
 That means the LLM or MCP caller can help propose hypotheses, but the resulting saved object is still deterministic and inspectable.
 
 Examples of current families:
+
 - breakout
 - trend
 - mean reversion
@@ -244,18 +255,233 @@ That is safer than “AI writes arbitrary strategy code and executes it.”
 
 ---
 
+## ✦ Run the first Kraken trend experiment
+
+Use the experiment runner when you want a repeatable BTC/SOL research pass
+without manually calling each MCP tool. It launches the configured MCP server
+over stdio, ingests closed Kraken candles, builds lagged features, saves trend
+strategy records, runs backtests, runs walk-forward validation, and ranks the
+lookback variants.
+
+```powershell
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.experiments.trend_backtest
+```
+
+Default experiment set:
+
+```text
+symbols: BTC/USD, SOL/USD
+interval: 60 minutes
+lookbacks: 5:20, 10:30, 20:50
+fees/slippage: 10 bps fee + 5 bps slippage
+```
+
+Output is printed as a ranked table and saved under:
+
+```text
+artifacts/trend_experiments/
+```
+
+This is research-only. The runner never calls live trading tools.
+
+---
+
+## ✦ Generate the critique-driven expansion report
+
+After the first trend experiment exists, generate the deeper six-strategy
+research report:
+
+```powershell
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.experiments.strategy_expansion_report
+```
+
+This report uses the first trend artifact as the baseline, critiques it, then
+evaluates three BTC strategies and three SOL strategies with delayed execution,
+fees, slippage, chronological splits, buy-and-hold benchmarks, and walk-forward
+folds.
+
+Outputs:
+
+```text
+artifacts/research_reports/*.md
+artifacts/research_reports/*.json
+```
+
+The same workflow is also exposed as the MCP tool
+`run_strategy_expansion_research`.
+
+---
+
+## ✦ Expand BTC/SOL history beyond one Kraken page
+
+Kraken's public OHLC response is short by default. Use the history expansion
+job before judging a strategy from only about 500 hourly candles:
+
+```powershell
+cd C:\Users\goku\Documents\quant_mcp_repo
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.ops.expand_history --symbols BTC/USD SOL/USD --interval-minutes 60 --target-rows 720
+```
+
+This paginates public OHLC history, keeps only closed candles, dedupes by
+timestamp, validates schema/chronology, and writes the expanded datasets under:
+
+```text
+data/datasets/btc_usd_60m.parquet
+data/datasets/sol_usd_60m.parquet
+artifacts/data_backfill/*.json
+```
+
+Current Kraken public OHLC behavior in this environment returns about 720 recent
+hourly candles per symbol even when a deeper `since` cursor is requested. That
+is enough to expand beyond the initial 500-row sample; deeper multi-month or
+multi-year backfills should use a dedicated historical-data source.
+
+The same workflow is exposed as MCP tool `expand_market_history`.
+
+---
+
+## ✦ Long-running local history archive
+
+Use the archive updater to start accumulating more history than Kraken returns
+in a single public OHLC window:
+
+```powershell
+cd C:\Users\goku\Documents\quant_mcp_repo
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.ops.history_archive --symbols BTC/USD SOL/USD --interval-minutes 60
+```
+
+Archive outputs:
+
+```text
+data/archives/kraken/btc_usd_60m.parquet
+data/archives/kraken/sol_usd_60m.parquet
+artifacts/history_archive/*.json
+logs/history_archive_health.jsonl
+```
+
+The first run seeds the archive from the current 720-row datasets. Future
+scheduled runs append new closed candles as they arrive and mirror the archive
+back to `data/datasets/*.parquet`, so research reports naturally gain more
+history over time.
+
+If you later buy or download trusted historical OHLC data, import it with:
+
+```powershell
+C:\Python313\python.exe -m quant_mcp.ops.history_archive --import-csv C:\path\to\sol_history.csv --import-symbol SOL/USD --interval-minutes 60
+```
+
+Expected CSV columns are `timestamp` or `ts_open`, plus `open`, `high`, `low`,
+`close`, and `volume`. Optional `ts_close` is supported.
+
+The same workflows are exposed as MCP tools `update_kraken_history_archive`
+and `import_external_history_csv`.
+
+---
+
+## ✦ SOL breakout paper-trading ledger
+
+The next step after the critique-driven report is **paper evidence**, not live
+trading. Generate the SOL Volume Expansion Breakout paper ledger with:
+
+```powershell
+cd C:\Users\goku\Documents\quant_mcp_repo
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.paper.sol_volume_breakout --initial-capital 10000 --fee-bps 10 --slippage-bps 5
+```
+
+Outputs are written to a timestamped folder under:
+
+```text
+artifacts/paper_trading/sol_volume_breakout_*/
+```
+
+Key files:
+
+- `summary.json` - assumptions, metrics, latest paper state, and output paths
+- `paper_ledger.csv` - bar-by-bar paper account ledger
+- `equity_curve.csv` - compact equity/drawdown series
+- `per_trade_ledger.csv` - entry/exit rows, net PnL, MAE/MFE, and trade status
+- `equity_curve.svg` - account equity chart
+- `drawdown_curve.svg` - drawdown chart
+
+The same workflow is exposed as MCP tool `run_sol_breakout_paper_ledger`.
+It never calls live-trading tools.
+
+---
+
+## ✦ Daily BTC/SOL data append
+
+Run the reusable append job manually:
+
+```powershell
+cd C:\Users\goku\Documents\quant_mcp_repo
+$env:PYTHONPATH="C:\Users\goku\Documents\quant_mcp_repo\src"
+C:\Python313\python.exe -m quant_mcp.ops.daily_data_append --symbols BTC/USD SOL/USD --interval-minutes 60
+```
+
+Or use the PowerShell wrapper:
+
+```powershell
+.\scripts\run_daily_data_append.ps1
+```
+
+The wrapper now runs two safe public-data steps:
+
+1. append/refresh the active BTC/SOL research datasets
+2. update the long-running local Kraken archive and mirror it back to datasets
+
+The jobs keep only closed Kraken candles, dedupe by timestamp, validate schema,
+write JSON reports under `artifacts/data_append/` and
+`artifacts/history_archive/`, and append health rows to
+`logs/daily_data_health.jsonl` plus `logs/history_archive_health.jsonl`.
+
+Register the daily Windows task:
+
+```powershell
+.\scripts\register_daily_data_append_task.ps1 -At 05:15
+```
+
+Verify the schedule:
+
+```powershell
+Get-ScheduledTask -TaskName QuantMCP-DailyDataAppend
+Get-ScheduledTaskInfo -TaskName QuantMCP-DailyDataAppend
+Start-ScheduledTask -TaskName QuantMCP-DailyDataAppend
+Get-Content .\logs\daily_data_append.log -Tail 80
+Get-Content .\logs\daily_data_health.jsonl -Tail 3
+Get-Content .\logs\history_archive_health.jsonl -Tail 3
+```
+
+Troubleshooting checks:
+
+- `ModuleNotFoundError`: confirm the wrapper sets `PYTHONPATH` to `src`.
+- No new rows: Kraken may not have a new closed candle since the last run.
+- Archive still at 720 rows: expected until future closed candles arrive or an
+  external CSV import adds older history.
+- Task does not run after sleep: confirm `StartWhenAvailable` is present.
+- Lock error: another manual or scheduled append is already running.
+
+---
+
 ## ✦ MCP design philosophy
 
 The MCP layer is deliberately thin.
 
 ### Tools
+
 Tools call services.
 They should not secretly become the business logic layer.
 
 ### Resources
+
 Resources expose read-only system state, such as risk configuration or dataset profiles.
 
 ### Prompts
+
 Prompts help guide analysis and review, but **must not override deterministic controls**.
 
 That split matters because it keeps AI helpful in the analysis loop while preventing it from quietly becoming the authority over execution.
@@ -301,24 +527,6 @@ $env:MCP_TRANSPORT="stdio"
 python -m quant_mcp.main
 ```
 
-## 4. Run the FastAPI-mounted version
-
-```bash
-uvicorn quant_mcp.api.fastapi_app:app --reload
-```
-
-Health endpoint:
-
-```text
-http://127.0.0.1:8000/healthz
-```
-
-Mounted MCP path:
-
-```text
-http://127.0.0.1:8000/mcp
-```
-
 ---
 
 ## ✦ Global Codex MCP setup
@@ -361,23 +569,46 @@ approval_mode = "approve"
 ```
 
 Expected surfaced MCP capabilities:
+
 - tools: `health_check`, `ingest_market_data`, `refresh_dataset`, `profile_dataset`,
   `list_dataset_versions`, `build_feature_table`, `generate_strategy_candidates`,
   `save_strategy`, `list_strategies`, `run_backtest`, `compare_backtests`,
   `run_walk_forward`, `run_forward_test`, `approve_strategy`, `revoke_approval`,
   `get_risk_status`, `paper_trade_step`, `prepare_live_trade_intent`,
-  `execute_live_trade`, `cancel_all_live_orders`
+  `execute_live_trade`, `cancel_all_live_orders`, `run_strategy_expansion_research`,
+  `expand_market_history`, `run_sol_breakout_paper_ledger`,
+  `update_kraken_history_archive`, `import_external_history_csv`,
+  `get_strategy_workflow_prompt`
 - resources: `quant://system/risk-status`,
-  `quant://datasets/{dataset_id}/profile`
-- prompts: `research_review_prompt`
+  `quant://datasets/{dataset_id}/profile`,
+  `quant://prompts/strategy-research-workflow`,
+  `quant://prompts/generic-strategy-critique`,
+  `quant://prompts/ml-rl-strategy-creation`,
+  `quant://system/workflow-policy`
+- prompts: `research_review_prompt`, `strategy_research_workflow_prompt`,
+  `generic_strategy_critique_prompt`, `ml_rl_strategy_creation_prompt`
+
+The server also provides FastMCP initialization instructions containing the
+core strategy intake, critique, backtest, and walk-forward workflow. Capable
+clients can use those instructions during connection, but each MCP client
+decides whether server instructions become a true LLM system message. The same
+workflow text is exposed as prompts/resources and through
+`get_strategy_workflow_prompt` for clients that need explicit retrieval.
 
 Verification checklist:
+
 - `codex mcp get QuantResearchMCP` shows the stdio command, env, and enabled status.
 - A client can list the tools/resources/prompts from the configured command.
 - Calling `health_check` returns `status=ok` and `live_enabled=false` by default.
 - Calling `get_risk_status` returns the configured symbol allowlist and live caps.
+- Calling `get_strategy_workflow_prompt` returns the core workflow; use
+  `mode="generic"` for the fallback critique workflow or `mode="ml_rl"` for
+  the institutional ML/RL strategy creation workflow.
+- Reading `quant://system/workflow-policy` shows which workflow prompt is
+  primary, fallback, and ML/RL-specific.
 
 Troubleshooting:
+
 - `ModuleNotFoundError: quant_mcp`: confirm `PYTHONPATH` points to this repo's `src`.
 - Slow startup or timeout: keep `startup_timeout_sec = 60`; FastMCP imports can be slow
   on first launch in this Windows environment.
@@ -409,6 +640,7 @@ mypy src
 If you want to learn from this repo instead of only running it, go in this order:
 
 ### Path A — architecture first
+
 1. `settings.py`
 2. `domain/`
 3. `services/risk_service.py`
@@ -416,6 +648,7 @@ If you want to learn from this repo instead of only running it, go in this order
 5. `mcp/tools.py`
 
 ### Path B — quant pipeline first
+
 1. `domain/dataset.py`
 2. `services/dataset_service.py`
 3. `services/feature_service.py`
@@ -423,6 +656,7 @@ If you want to learn from this repo instead of only running it, go in this order
 5. `services/walkforward_service.py`
 
 ### Path C — exchange plumbing first
+
 1. `adapters/kraken/public_client.py`
 2. `adapters/kraken/signer.py`
 3. `adapters/kraken/private_client.py`
@@ -433,15 +667,15 @@ If you want to learn from this repo instead of only running it, go in this order
 ## ✦ Extension roadmap
 
 ### Best next improvement
-Implement a real paper-trading ledger with:
-- positions
-- fills
-- realized/unrealized PnL
-- fees/funding accrual
-- reconciliation snapshots
+
+Add a promotion gate that consumes paper-ledger evidence before any live-trade
+intent can pass. The first ledger export now exists for SOL Volume Expansion
+Breakout, but it is not yet an approval artifact.
 
 ### Best next realism improvement
+
 Upgrade the backtest engine to:
+
 - support explicit entry/exit events
 - support stop-loss logic
 - track trade-level logs
@@ -449,61 +683,101 @@ Upgrade the backtest engine to:
 - evaluate by regime segment
 
 ### Best next safety improvement
+
 Require `execute_live_trade()` to accept a validated live-intent artifact ID rather than a raw order plan.
 That creates a stronger audit boundary.
 
 ---
 
-# Glossary
+## Glossary
 
 ## Approval Record
+
 A structured object granting temporary permission for a strategy to trade specific symbols within specific allocation limits.
 
 ## Append-only refresh
+
 A dataset update pattern where new rows are added and duplicates are removed, but old historical rows are not rewritten arbitrarily.
 
 ## Basis points (bps)
+
 A unit for small percentages.
 100 bps = 1.00%.
 
 ## Buy-and-hold baseline
+
 A benchmark representing what would have happened if you simply bought the asset and held it, instead of using the strategy.
 
 ## Closed candle
+
 A completed OHLC bar. Using only closed candles avoids acting on unfinished interval data that can still change.
 
 ## Drawdown
+
 The decline from an equity curve’s previous peak to a later trough.
 
 ## Execution mode
+
 Whether a trade request is paper-only or intended for live execution.
 
 ## Feature leakage
+
 Using information in training or testing that would not actually have been known at decision time.
 
-## Forward test
+## Forward test1
+
 Testing the strategy on later unseen data or a live-like paper stream after earlier research stages are complete.
 
 ## MCP
+
 Model Context Protocol. A structured way to expose tools, resources, and prompts to AI clients.
 
 ## Paper trading
+
 Simulated trading using live or historical market data without risking real capital.
 
 ## Preflight validation
+
 A strict validation pass before allowing an action to continue, especially important before live trade execution.
 
 ## Risk service
+
 The module that evaluates whether a trade is allowed. In this repo, it is the main veto boundary for live execution.
 
 ## Slippage
+
 The difference between the expected execution price and the actual fill price.
 
 ## Strategy grammar
+
 A constrained format for expressing strategy ideas safely and deterministically, instead of allowing arbitrary code generation.
 
 ## Walk-forward validation
+
 A time-aware validation method that trains on earlier data and tests on later data repeatedly, preserving chronology.
+
+---
+
+## ✦ Maintenance & Change Safety
+
+### Safe To Edit
+
+- `src/quant_mcp/ops/` for data jobs, archive jobs, and scheduling helpers.
+- `src/quant_mcp/research/` for strategy evaluation logic.
+- `src/quant_mcp/paper/` for paper-trading ledgers and evidence exports.
+- `src/quant_mcp/tests/` for regression coverage.
+
+### Edit Carefully
+
+- `src/quant_mcp/mcp/tools.py`: add thin wrappers only; avoid business logic.
+- `src/quant_mcp/services/dataset_service.py`: closed-candle and dedupe rules affect every research result.
+- `src/quant_mcp/adapters/kraken/public_client.py`: protocol assumptions affect data correctness.
+
+### High Risk
+
+- `src/quant_mcp/services/risk_service.py`: fail-closed behavior must not be weakened.
+- `src/quant_mcp/services/execution_service.py`: live/private order path.
+- `src/quant_mcp/adapters/kraken/private_client.py` and `signer.py`: credentials and signed requests.
 
 ---
 
@@ -512,6 +786,7 @@ A time-aware validation method that trains on earlier data and tests on later da
 This repo is intentionally opinionated.
 
 It prefers:
+
 - safer over flashier
 - inspectable over magical
 - modular over monolithic

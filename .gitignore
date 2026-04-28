@@ -1,6 +1,11 @@
-/.env.example
-/.pytest_cache
-pytest
-.pyc
+.env
+!.env.example
+.venv/
+.pytest_cache/
+.pytest_tmp/
 __pycache__/
-*.pyc
+*.py[cod]
+data/
+docs/
+artifacts/
+logs/

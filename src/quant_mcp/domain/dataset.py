@@ -35,7 +35,7 @@ class IngestMarketDataRequest(BaseModel):
 class RefreshDatasetRequest(BaseModel):
     symbol: str
     interval_minutes: int = 60
-    max_rows: int = 500
+    max_rows: int = 0
 
 
 class DatasetProfile(BaseModel):

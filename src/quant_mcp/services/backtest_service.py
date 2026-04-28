@@ -13,6 +13,7 @@ import pandas as pd
 from quant_mcp.adapters.persistence.json_store import JsonStore
 from quant_mcp.adapters.persistence.parquet_store import ParquetStore
 from quant_mcp.domain.validation import BacktestMetrics, BacktestRequest, BacktestResult
+from quant_mcp.domain.strategy import StrategySpec
 from quant_mcp.enums import ValidationStatus
 from quant_mcp.settings import AppSettings
 
@@ -28,7 +29,26 @@ class BacktestService:
         if frame.empty:
             raise ValueError("Feature table is empty")
 
-        frame["position"] = frame["signal_trend_up"].astype(int)
+        try:
+            strategy = self.results.read_model(f"strategies/{request.strategy_id}.json", StrategySpec)
+        except Exception:
+            strategy = None
+
+        if strategy and strategy.entry_rule and "from" not in strategy.entry_rule:
+            try:
+                # Handle dual-sided rules separated by 'or'
+                if " or " in strategy.entry_rule:
+                    cond1, cond2 = strategy.entry_rule.split(" or ")
+                    pos = pd.Series(0, index=frame.index)
+                    pos[frame.eval(cond1)] = 1
+                    pos[frame.eval(cond2)] = -1
+                    frame["position"] = pos
+                else:
+                    frame["position"] = frame.eval(strategy.entry_rule).astype(int)
+            except Exception:
+                frame["position"] = frame["signal_trend_up"].astype(int)
+        else:
+            frame["position"] = frame["signal_trend_up"].astype(int)
         frame["gross_return"] = frame["position"] * frame["ret_1"]
         cost = (request.fee_bps + request.slippage_bps) / 10_000
         # Transaction costs are charged only when the target position changes.

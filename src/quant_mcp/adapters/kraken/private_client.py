@@ -16,11 +16,10 @@ from quant_mcp.adapters.kraken.signer import KrakenSigner
 class KrakenPrivateClient:
     """Private execution adapter. Keep isolated from public data to reduce accidental coupling."""
 
-    base_url = "https://api.kraken.com"
-
-    def __init__(self, api_key: str, api_secret: str) -> None:
+    def __init__(self, api_key: str, api_secret: str, base_url: str = "https://api.kraken.com") -> None:
         self.api_key = api_key
         self.api_secret = api_secret
+        self.base_url = base_url.rstrip("/")
 
     async def add_order(self, payload: dict[str, str]) -> dict:
         path = "/0/private/AddOrder"

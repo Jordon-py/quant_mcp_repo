@@ -7,7 +7,7 @@ rows into internal Candle contracts for dataset services.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -25,6 +25,16 @@ class KrakenPublicClient:
         interval_minutes: int = 60,
         since_unix: int | None = None,
     ) -> list[Candle]:
+        candles, _ = await self.fetch_ohlc_page(symbol, interval_minutes, since_unix)
+        return candles
+
+    async def fetch_ohlc_page(
+        self,
+        symbol: str,
+        interval_minutes: int = 60,
+        since_unix: int | None = None,
+    ) -> tuple[list[Candle], int | None]:
+        """Fetch one Kraken OHLC page plus the cursor for the next page."""
         params = {"pair": symbol, "interval": interval_minutes}
         if since_unix is not None:
             params["since"] = since_unix
@@ -41,14 +51,16 @@ class KrakenPublicClient:
         # Kraken nests candles under the resolved pair key and reserves "last" for pagination.
         pair_key = next((k for k in result.keys() if k != "last"), None)
         if pair_key is None:
-            return []
+            return [], parse_last_cursor(result.get("last"))
 
-        return [self._to_candle(symbol, interval_minutes, row) for row in result[pair_key]]
+        candles = [self._to_candle(symbol, interval_minutes, row) for row in result[pair_key]]
+        return candles, parse_last_cursor(result.get("last"))
 
     @staticmethod
     def _to_candle(symbol: str, interval_minutes: int, row: Sequence[str | int | float]) -> Candle:
         ts_open = datetime.fromtimestamp(int(float(row[0])), tz=timezone.utc)
         ts_close = datetime.fromtimestamp(int(float(row[0])) + interval_minutes * 60, tz=timezone.utc)
+        closed = ts_close <= datetime.now(timezone.utc) - timedelta(seconds=30)
         return Candle(
             symbol=symbol,
             interval_minutes=interval_minutes,
@@ -59,5 +71,15 @@ class KrakenPublicClient:
             low=float(row[3]),
             close=float(row[4]),
             volume=float(row[6]),
-            closed=True,
+            closed=closed,
         )
+
+
+def parse_last_cursor(value: object) -> int | None:
+    """Normalize Kraken's pagination cursor while tolerating missing/blank values."""
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None

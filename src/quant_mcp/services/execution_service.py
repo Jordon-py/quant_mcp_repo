@@ -20,7 +20,11 @@ class ExecutionService:
         self.risk_service = risk_service
         # Private trading stays unavailable unless both credentials are present.
         self.private_client = (
-            KrakenPrivateClient(settings.kraken_api_key, settings.kraken_api_secret)
+            KrakenPrivateClient(
+                settings.kraken_api_key,
+                settings.kraken_api_secret,
+                base_url=settings.kraken_rest_base_url,
+            )
             if settings.kraken_api_key and settings.kraken_api_secret
             else None
         )
